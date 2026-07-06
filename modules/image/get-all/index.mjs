@@ -69,8 +69,6 @@ export const handler = async (event) => {
   );
 
   return response(200, {
-    userId,
-    count: images.length,
     images
   });
 };
