@@ -1,0 +1,224 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Local SAM mirror of the current MyApp Dev backend
+
+# This template is for local development. Existing AWS resources were created
+# outside this stack; do not run `sam deploy` until an import/migration plan exists.
+Parameters:
+  BucketName:
+    Type: String
+    Default: tuan-image-upscale-063598469180-063598469180-us-east-1-an
+  UsersTable:
+    Type: String
+    Default: users
+  CognitoUserPoolArn:
+    Type: String
+    Default: arn:aws:cognito-idp:us-east-1:063598469180:userpool/us-east-1_ZpmfeJQa0
+  CognitoClientId:
+    Type: String
+    Default: 3g9jtov6i965ilnqs5jm518k7e
+  ImageUpscaleQueueArn:
+    Type: String
+    Default: arn:aws:sqs:us-east-1:063598469180:image-upscale-queue
+  StateMachineArn:
+    Type: String
+    Default: arn:aws:states:us-east-1:063598469180:stateMachine:MyStateMachine-e11f94a6
+  OpenAIImageModel:
+    Type: String
+    Default: gpt-image-1
+  OpenAIApiKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Handler: index.handler
+    Architectures:
+      - x86_64
+
+Resources:
+  MyAppApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Dev
+      Cors:
+        AllowOrigin: "'*'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowMethods: "'GET,POST,OPTIONS'"
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !Ref CognitoUserPoolArn
+          LambdaTokenAuthorizer:
+            FunctionArn: !GetAtt LambdaAuthorizerFunction.Arn
+            Identity:
+              Header: Authorization
+              ReauthorizeEvery: 0
+
+  UploadImageFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/image/upload-image/
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+        - arn:aws:lambda:us-east-1:063598469180:layer:upscaleProject:2
+      Events:
+        UploadsPost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyAppApi
+            Path: /uploads
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  GetAllImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/image/get-all/
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+      Events:
+        ImagesGet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyAppApi
+            Path: /images
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ProcessStarterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/image/process-starter/
+      Timeout: 303
+      MemorySize: 128
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          STATE_MACHINE_ARN: !Ref StateMachineArn
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+      Events:
+        ImageUpscaleQueue:
+          Type: SQS
+          Properties:
+            Queue: !Ref ImageUpscaleQueueArn
+            BatchSize: 10
+
+  ProcessImageUpscaleFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      ExistingInvoker: StepFunctions MyStateMachine-e11f94a6
+    Properties:
+      CodeUri: modules/image/process-upscale/
+      Timeout: 600
+      MemorySize: 1024
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+          OPENAI_IMAGE_MODEL: !Ref OpenAIImageModel
+          OPENAI_API_KEY: !Ref OpenAIApiKey
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+
+  LambdaAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/auth/authorizer/
+      Timeout: 30
+      MemorySize: 128
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+        - arn:aws:lambda:us-east-1:063598469180:layer:cognito-jwt-verifier:1
+
+  RegisterUserFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      ExistingTrigger: Cognito PostConfirmation for us-east-1_ZpmfeJQa0
+    Properties:
+      CodeUri: modules/auth/register/
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+
+  RevokeTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/auth/revoke-token/
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          COGNITO_CLIENT_ID: !Ref CognitoClientId
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+      Events:
+        RevokeTokenPost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyAppApi
+            Path: /auth/revoke-token
+            Method: POST
+            Auth:
+              Authorizer: LambdaTokenAuthorizer
+
+  GetAllUsersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/user/get-all/
+      Timeout: 30
+      MemorySize: 128
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+      Events:
+        UsersGet:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyAppApi
+            Path: /users
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  UpdateRoleFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      ExistingTrigger: None found in Lambda, API Gateway, Cognito, or event source mappings
+    Properties:
+      CodeUri: modules/user/update-role/
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+
+Outputs:
+  LocalApiBaseUrl:
+    Value: !Sub "https://${MyAppApi}.execute-api.${AWS::Region}.amazonaws.com/Dev"
