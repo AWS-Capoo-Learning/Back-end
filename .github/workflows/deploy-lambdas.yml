@@ -1,0 +1,96 @@
+name: Deploy changed Lambdas
+
+on:
+  push:
+    branches: [main]
+    paths: ["modules/**", ".github/workflows/deploy-lambdas.yml"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.changed.outputs.matrix }}
+      count: ${{ steps.changed.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: changed
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          DEPLOY_ALL=false
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+            DEPLOY_ALL=true
+            CHANGED_FILES=""
+          else
+            CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")
+          fi
+
+          ITEMS='[]'
+          while IFS= read -r manifest; do
+            directory=$(dirname "$manifest")
+            CODE_CHANGED=$(grep "^${directory}/" <<< "$CHANGED_FILES" | grep -v "^${directory}/deploy\.json$" || true)
+            if [[ "$DEPLOY_ALL" == "true" || -n "$CODE_CHANGED" ]]; then
+              ITEMS=$(jq -c --arg directory "$directory" --arg manifest "$manifest" \
+                '. + [{"directory":$directory,"manifest":$manifest}]' <<< "$ITEMS")
+            fi
+          done < <(find modules -name deploy.json -type f | sort)
+
+          echo "count=$(jq 'length' <<< "$ITEMS")" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(jq -c '{include:.}' <<< "$ITEMS")" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: detect
+    if: needs.detect.outputs.count != '0'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.detect.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Package
+        working-directory: ${{ matrix.directory }}
+        run: zip -r "$RUNNER_TEMP/function.zip" . -x deploy.json
+      - name: Create or update
+        shell: bash
+        env:
+          MANIFEST: ${{ matrix.manifest }}
+        run: |
+          NAME=$(jq -r '.functionName' "$MANIFEST")
+          if aws lambda get-function --function-name "$NAME" >/dev/null 2>&1; then
+            aws lambda update-function-code --function-name "$NAME" --zip-file "fileb://$RUNNER_TEMP/function.zip"
+          else
+            ROLE=$(jq -r '.role // empty' "$MANIFEST")
+            [[ -n "$ROLE" ]] || { echo "New Lambda requires role in deploy.json" >&2; exit 1; }
+            RUNTIME=$(jq -r '.runtime // "nodejs24.x"' "$MANIFEST")
+            HANDLER=$(jq -r '.handler // "index.handler"' "$MANIFEST")
+            MEMORY=$(jq -r '.memorySize // 128' "$MANIFEST")
+            TIMEOUT=$(jq -r '.timeout // 30' "$MANIFEST")
+            ENVIRONMENT=$(jq -c '.environment // {"Variables":{}}' "$MANIFEST")
+            ARGS=(--function-name "$NAME" --runtime "$RUNTIME" --handler "$HANDLER" --role "$ROLE" --memory-size "$MEMORY" --timeout "$TIMEOUT" --architectures x86_64 --environment "$ENVIRONMENT" --zip-file "fileb://$RUNNER_TEMP/function.zip")
+            mapfile -t LAYERS < <(jq -r '.layers[]?' "$MANIFEST")
+            (( ${#LAYERS[@]} == 0 )) || ARGS+=(--layers "${LAYERS[@]}")
+            aws lambda create-function "${ARGS[@]}"
+          fi
+
+          aws lambda wait function-updated --function-name "$NAME"
+          VERSION=$(aws lambda publish-version --function-name "$NAME" --query Version --output text)
+          if aws lambda get-alias --function-name "$NAME" --name Dev >/dev/null 2>&1; then
+            aws lambda update-alias --function-name "$NAME" --name Dev --function-version "$VERSION"
+          else
+            aws lambda create-alias --function-name "$NAME" --name Dev --function-version "$VERSION"
+          fi
