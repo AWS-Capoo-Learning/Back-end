@@ -1,0 +1,81 @@
+name: Deploy getAllUser to Dev
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "modules/user/get-all/**"
+      - ".github/workflows/deploy-get-all-users.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-get-all-user-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Authenticate to AWS
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Package Lambda
+        working-directory: modules/user/get-all
+        run: zip -r "$RUNNER_TEMP/getAllUser.zip" .
+
+      - name: Upload Lambda code
+        run: |
+          aws lambda update-function-code \
+            --function-name getAllUser \
+            --zip-file "fileb://$RUNNER_TEMP/getAllUser.zip"
+
+          aws lambda wait function-updated \
+            --function-name getAllUser
+
+      - name: Publish Lambda version
+        id: publish
+        run: |
+          VERSION=$(aws lambda publish-version \
+            --function-name getAllUser \
+            --description "GitHub commit $GITHUB_SHA" \
+            --query Version \
+            --output text)
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Point Dev alias to new version
+        env:
+          VERSION: ${{ steps.publish.outputs.version }}
+        run: |
+          if aws lambda get-alias \
+            --function-name getAllUser \
+            --name Dev > /dev/null 2>&1; then
+            aws lambda update-alias \
+              --function-name getAllUser \
+              --name Dev \
+              --function-version "$VERSION"
+          else
+            aws lambda create-alias \
+              --function-name getAllUser \
+              --name Dev \
+              --function-version "$VERSION"
+          fi
+
+      - name: Show deployment result
+        env:
+          VERSION: ${{ steps.publish.outputs.version }}
+        run: echo "Deployed getAllUser version $VERSION to Dev"
