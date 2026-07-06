@@ -207,9 +207,14 @@ Resources:
       CodeUri: GetAllUsersFunction
       Timeout: 30
       MemorySize: 128
-      Layers:
-      - arn:aws:lambda:us-east-1:063598469180:layer:SDSD:1
-      - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+      Environment:
+        Variables:
+          USERS_TABLE:
+            Ref: UsersTable
+      Policies:
+      - DynamoDBReadPolicy:
+          TableName:
+            Ref: UsersTable
       Events:
         UsersGet:
           Type: Api

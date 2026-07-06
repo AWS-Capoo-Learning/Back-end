@@ -1,0 +1,16 @@
+{
+  "httpMethod": "GET",
+  "path": "/users",
+  "headers": {
+    "Authorization": "Bearer local-test"
+  },
+  "requestContext": {
+    "authorizer": {
+      "claims": {
+        "sub": "local-admin-001",
+        "email": "admin@example.com",
+        "cognito:groups": "[\"admin\"]"
+      }
+    }
+  }
+}

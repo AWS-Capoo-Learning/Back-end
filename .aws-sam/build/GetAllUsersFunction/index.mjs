@@ -5,8 +5,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-const tableName = "users";
-
+const tableName = process.env.USERS_TABLE;
 const corsHeaders = {
   "Access-Control-Allow-Origin": "http://127.0.0.1:3000",
   "Access-Control-Allow-Headers": "Authorization,Content-Type",
