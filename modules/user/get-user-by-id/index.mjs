@@ -65,7 +65,6 @@ function parseGroups(value) {
       return parsed;
     }
   } catch {
-    // Cognito có thể trả group dưới dạng chuỗi.
   }
 
   return String(value)
