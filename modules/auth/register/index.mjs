@@ -20,7 +20,7 @@ export const handler = async (event) => {
 
   const attributes = event.request.userAttributes;
   const userId = randomUUID();
-  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+  const passwordTime = String(Math.floor(Date.now() / 1000));
 
   try {
     await db.send(new PutCommand({
@@ -54,7 +54,7 @@ export const handler = async (event) => {
     UserAttributes: [
       {
         Name: "custom:password_time",
-        Value: expiresAt
+        Value: passwordTime
       },
       {
         Name: "custom:id",

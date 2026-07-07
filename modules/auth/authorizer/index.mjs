@@ -46,7 +46,7 @@ export const handler = async (event) => {
     if (!tokenId) {
       throw new Error("Missing token identifier");
     }
-
+    //Kiểm tra token đã bị thu hồi chưa
     const revoked = await db.send(
       new GetItemCommand({
         TableName: revokedTokensTable,
@@ -61,7 +61,28 @@ export const handler = async (event) => {
     if (revoked.Item) {
       throw new Error("Token revoked");
     }
+    // Kiểm tra xem mật khẩu còn hạn hay chưa nếu là tài khoản internal
+    const isExternalProvider =
+      Array.isArray(payload.identities) && payload.identities.length > 0;
 
+    const isInternalUser = !isExternalProvider;
+
+    if (isInternalUser) {
+      const now = Math.floor(Date.now() / 1000);
+      const passwordTime = Number(payload["custom:password_time"] ?? 0);
+      if (now - passwordTime > 5 * 60) {
+        return generatePolicy(
+          "Deny",
+          event.methodArn,
+          {
+            errorMessage: "Password expired"
+          }
+        );      
+      }
+    }
+
+
+    // Trả về
     return generatePolicy(
       "Allow",
       event.methodArn,
@@ -85,7 +106,10 @@ export const handler = async (event) => {
 
     return generatePolicy(
       "Deny",
-      event.methodArn
+      event.methodArn,
+      {
+        errorMessage: error.message ?? "Unauthorized"
+      }
     );
   }
 };
