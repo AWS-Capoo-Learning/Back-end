@@ -16,7 +16,7 @@ const allowedContentTypes = new Set([
 ]);
 
 export const handler = withApi(async (event) => {
-  const userId = event.requestContext?.authorizer?.claims?.["custom:id"];
+  const userId = event.requestContext?.authorizer?.userId;
   if (!userId) {
     throw httpError(401, "Unauthorized");
   }
