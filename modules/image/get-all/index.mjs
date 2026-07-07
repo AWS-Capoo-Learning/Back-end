@@ -22,7 +22,7 @@ export const handler = async (event) => {
     return response(204, "");
   }
 
-  const userId = event.requestContext?.authorizer?.claims?.["custom:id"];
+  const userId = event.requestContext?.authorizer?.userId;
 
   if (!userId) {
     return response(401, {

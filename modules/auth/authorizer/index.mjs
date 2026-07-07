@@ -67,6 +67,7 @@ export const handler = async (event) => {
       event.methodArn,
       {
         sub: payload.sub,
+        userId: payload["custom:id"] ?? "",
         username:
           payload["cognito:username"] ?? "",
         groups: JSON.stringify(
