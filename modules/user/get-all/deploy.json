@@ -1,5 +1,5 @@
 {
-  "functionName":"getAllUser"
+  "functionName":"getAllUser",
   "role": "arn:aws:iam::063598469180:role/service-role/getAllUser-role-1l6aujzr",
   "runtime": "nodejs24.x",
   "handler": "index.handler",

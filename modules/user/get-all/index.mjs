@@ -30,7 +30,7 @@ export const handler = async (event) => {
 
   if (!groups.includes("admin")) {
     return response(403, {
-      message: "Admin permission required"
+      message: "Admin permission  required"
     });
   }
 
