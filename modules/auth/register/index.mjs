@@ -21,6 +21,11 @@ export const handler = async (event) => {
   const attributes = event.request.userAttributes;
   const userId = randomUUID();
   const passwordTime = String(Math.floor(Date.now() / 1000));
+  const identities = parseIdentities(attributes.identities);
+  const isExternal = identities.length > 0;
+  const provider = isExternal
+    ? identities[0]?.providerName ?? identities[0]?.providerType ?? "EXTERNAL"
+    : "COGNITO";
 
   try {
     await db.send(new PutCommand({
@@ -32,6 +37,8 @@ export const handler = async (event) => {
         displayName: attributes.name ?? "",
         status: "ACTIVE",
         role: "USER",
+        provider,
+        isExternal,
         createdAt: new Date().toISOString()
       },
       ConditionExpression: "attribute_not_exists(userId)"
@@ -65,3 +72,21 @@ export const handler = async (event) => {
 
   return event;
 };
+
+function parseIdentities(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}

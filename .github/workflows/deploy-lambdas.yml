@@ -94,3 +94,15 @@ jobs:
           else
             aws lambda create-alias --function-name "$NAME" --name Dev --function-version "$VERSION"
           fi
+
+          LOG_GROUP="/aws/lambda/$NAME"
+          RETENTION_DAYS=$(jq -r '.logRetentionDays // 14' "$MANIFEST")
+          if ! aws logs describe-log-groups \
+            --log-group-name-prefix "$LOG_GROUP" \
+            --query "logGroups[?logGroupName=='$LOG_GROUP'] | [0].logGroupName" \
+            --output text | grep -qx "$LOG_GROUP"; then
+            aws logs create-log-group --log-group-name "$LOG_GROUP"
+          fi
+          aws logs put-retention-policy \
+            --log-group-name "$LOG_GROUP" \
+            --retention-in-days "$RETENTION_DAYS"
