@@ -185,6 +185,33 @@ Resources:
             Auth:
               Authorizer: LambdaTokenAuthorizer
 
+  ChangePasswordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: modules/auth/change-password/
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          USER_POOL_ID: !Select [1, !Split ["/", !Ref CognitoUserPoolArn]]
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminUpdateUserAttributes
+              Resource: !Ref CognitoUserPoolArn
+      Layers:
+        - arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2
+      Events:
+        ChangePasswordPost:
+          Type: Api
+          Properties:
+            RestApiId: !Ref MyAppApi
+            Path: /auth/change-password
+            Method: POST
+            Auth:
+              Authorizer: LambdaTokenAuthorizer
+
   GetAllUsersFunction:
     Type: AWS::Serverless::Function
     Properties:

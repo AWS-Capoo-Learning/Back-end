@@ -70,7 +70,10 @@ export const handler = async (event) => {
     if (isInternalUser) {
       const now = Math.floor(Date.now() / 1000);
       const passwordTime = Number(payload["custom:password_time"] ?? 0);
-      if (now - passwordTime > 5 * 60) {
+      if (
+        now - passwordTime > 5 * 60 &&
+        !isChangePasswordRequest(event.methodArn)
+      ) {
         return generatePolicy(
           "Deny",
           event.methodArn,
@@ -133,4 +136,8 @@ function generatePolicy(
     },
     context
   };
+}
+
+function isChangePasswordRequest(methodArn = "") {
+  return String(methodArn).includes("/POST/auth/change-password");
 }
