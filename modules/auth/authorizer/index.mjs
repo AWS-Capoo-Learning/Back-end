@@ -6,20 +6,10 @@ import {
 
 const db = new DynamoDBClient({});
 
-const userPoolId =
-  process.env.USER_POOL_ID ?? "us-east-1_ZpmfeJQa0";
-
-const clientId =
-  process.env.CLIENT_ID ?? "3g9jtov6i965ilnqs5jm518k7e";
-
 const revokedTokensTable =
   process.env.REVOKED_TOKENS_TABLE ?? "revoked-tokens";
 
-const verifier = CognitoJwtVerifier.create({
-  userPoolId,
-  tokenUse: "id",
-  clientId
-});
+const verifier = CognitoJwtVerifier.create(getAuthConfigs());
 
 export const handler = async (event) => {
   try {
@@ -39,6 +29,8 @@ export const handler = async (event) => {
 
     // Kiểm tra chữ ký, issuer, client ID, token_use và expiration.
     const payload = await verifier.verify(token);
+    const provider = getProvider(payload);
+    const isExternalProvider = provider !== "COGNITO";
 
     const tokenId =
       payload.origin_jti ?? payload.jti;
@@ -62,9 +54,6 @@ export const handler = async (event) => {
       throw new Error("Token revoked");
     }
     // Kiểm tra xem mật khẩu còn hạn hay chưa nếu là tài khoản internal
-    const isExternalProvider =
-      Array.isArray(payload.identities) && payload.identities.length > 0;
-
     const isInternalUser = !isExternalProvider;
 
     if (isInternalUser) {
@@ -97,6 +86,10 @@ export const handler = async (event) => {
         groups: JSON.stringify(
           payload["cognito:groups"] ?? []
         ),
+        iss: payload.iss ?? "",
+        clientId: payload.aud ?? "",
+        provider,
+        isExternal: String(isExternalProvider),
         tokenId,
         expiresAt: String(payload.exp)
       }
@@ -140,4 +133,52 @@ function generatePolicy(
 
 function isChangePasswordRequest(methodArn = "") {
   return String(methodArn).includes("/POST/auth/change-password");
+}
+
+function getAuthConfigs() {
+  const configs = parseAuthConfigs(process.env.COGNITO_AUTH_CONFIGS);
+
+  if (configs.length > 0) {
+    return configs;
+  }
+
+  return {
+    userPoolId: process.env.USER_POOL_ID ?? "us-east-1_ZpmfeJQa0",
+    tokenUse: "id",
+    clientId: process.env.CLIENT_ID ?? "3g9jtov6i965ilnqs5jm518k7e"
+  };
+}
+
+function parseAuthConfigs(value) {
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .map((config) => ({
+        userPoolId: config.userPoolId,
+        tokenUse: "id",
+        clientId: config.clientId
+      }))
+      .filter((config) => config.userPoolId && config.clientId);
+  } catch {
+    return [];
+  }
+}
+
+function getProvider(payload) {
+  const identities = payload.identities;
+
+  if (!Array.isArray(identities) || identities.length === 0) {
+    return "COGNITO";
+  }
+
+  return identities[0]?.providerName ?? identities[0]?.providerType ?? "EXTERNAL";
 }

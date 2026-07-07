@@ -20,13 +20,14 @@ export const handler = async (event) => {
     return response(204, "");
   }
 
-  const claims = event.requestContext?.authorizer?.claims;
+  const authorizer = event.requestContext?.authorizer ?? {};
+  const claims = authorizer.claims ?? authorizer;
   if (!claims) {
     return response(401, {
       message: "Unauthorized: missing Cognito claims"
     });
   }
-  const groups = parseGroups(claims["cognito:groups"]);
+  const groups = parseGroups(claims.groups ?? claims["cognito:groups"]);
 
   if (!groups.includes("admin")) {
     return response(403, {
