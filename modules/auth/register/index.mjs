@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
-  TransactWriteCommand
+  PutCommand,
+  ScanCommand
 } from "@aws-sdk/lib-dynamodb";
 import {
   CognitoIdentityProviderClient,
@@ -30,55 +31,33 @@ export const handler = async (event) => {
     identities[0]?.issuer ??
     `https://cognito-idp.${process.env.AWS_REGION}.amazonaws.com/${event.userPoolId}`;
   const normalizedEmail = attributes.email?.trim().toLowerCase();
-  const emailProviderKey = buildEmailProviderKey(normalizedEmail, provider);
   const createdAt = new Date().toISOString();
 
-  try {
-    await db.send(new TransactWriteCommand({
-      TransactItems: [
-        {
-          Put: {
-            TableName: process.env.USERS_TABLE,
-            Item: {
-              userId: emailProviderKey,
-              _type: "EMAIL_PROVIDER_UNIQUE",
-              email: normalizedEmail,
-              provider,
-              ownerUserId: userId,
-              cognitoSub: attributes.sub,
-              createdAt
-            },
-            ConditionExpression: "attribute_not_exists(userId)"
-          }
-        },
-        {
-          Put: {
-            TableName: process.env.USERS_TABLE,
-            Item: {
-              userId,
-              cognitoSub: attributes.sub,
-              email: normalizedEmail,
-              displayName: attributes.name ?? "",
-              status: "ACTIVE",
-              role: "USER",
-              provider,
-              isExternal,
-              iss,
-              emailProviderKey,
-              createdAt
-            },
-            ConditionExpression: "attribute_not_exists(userId)"
-          }
-        }
-      ]
-    }));
-  } catch (error) {
-    if (error.name === "TransactionCanceledException") {
-      throw new Error("Email and provider already exists");
-    }
+  const existingUser = await findUserByEmailAndProvider(
+    normalizedEmail,
+    provider
+  );
 
-    throw error;
+  if (existingUser) {
+    throw new Error("Email and provider already exists");
   }
+
+  await db.send(new PutCommand({
+    TableName: process.env.USERS_TABLE,
+    Item: {
+      userId,
+      cognitoSub: attributes.sub,
+      email: normalizedEmail,
+      displayName: attributes.name ?? "",
+      status: "ACTIVE",
+      role: "USER",
+      provider,
+      isExternal,
+      iss,
+      createdAt
+    },
+    ConditionExpression: "attribute_not_exists(userId)"
+  }));
 
   await cognito.send(new AdminAddUserToGroupCommand({
     UserPoolId: event.userPoolId,
@@ -122,6 +101,16 @@ function parseIdentities(value) {
   }
 }
 
-function buildEmailProviderKey(email, provider) {
-  return `EMAIL_PROVIDER#${provider.toLowerCase()}#${email}`;
+async function findUserByEmailAndProvider(email, provider) {
+  const result = await db.send(new ScanCommand({
+    TableName: process.env.USERS_TABLE,
+    FilterExpression: "email = :email AND provider = :provider",
+    ExpressionAttributeValues: {
+      ":email": email,
+      ":provider": provider
+    },
+    Limit: 1
+  }));
+
+  return result.Items?.[0];
 }
