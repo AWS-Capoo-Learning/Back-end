@@ -1,1 +1,14 @@
-{"functionName":"change_password"}
+{
+  "functionName": "change_password",
+  "role": "arn:aws:iam::063598469180:role/service-role/getAllUser-role-1l6aujzr",
+  "runtime": "nodejs24.x",
+  "handler": "index.handler",
+  "memorySize": 128,
+  "timeout": 30,
+  "layers": [
+    "arn:aws:lambda:us-east-1:063598469180:layer:apiLayer:2"
+  ],
+  "environment": {
+    "Variables": {}
+  }
+}

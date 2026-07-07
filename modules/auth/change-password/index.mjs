@@ -1,13 +1,10 @@
 import {
   ChangePasswordCommand,
   CognitoIdentityProviderClient,
-  AdminUpdateUserAttributesCommand
+  UpdateUserAttributesCommand
 } from "@aws-sdk/client-cognito-identity-provider";
 
 const cognito = new CognitoIdentityProviderClient({});
-
-const userPoolId =
-  process.env.USER_POOL_ID ?? "us-east-1_ZpmfeJQa0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "http://127.0.0.1:3000",
@@ -21,17 +18,6 @@ export const handler = async (event) => {
 
   if (method === "OPTIONS") {
     return response(204, "");
-  }
-
-  const authorizer = event.requestContext?.authorizer ?? {};
-  const username =
-    authorizer.username ??
-    authorizer.claims?.["cognito:username"];
-
-  if (!username) {
-    return response(401, {
-      message: "Missing authenticated user information"
-    });
   }
 
   const body = parseBody(event.body);
@@ -60,9 +46,8 @@ export const handler = async (event) => {
       ProposedPassword: proposedPassword
     }));
 
-    await cognito.send(new AdminUpdateUserAttributesCommand({
-      UserPoolId: userPoolId,
-      Username: username,
+    await cognito.send(new UpdateUserAttributesCommand({
+      AccessToken: accessToken,
       UserAttributes: [
         {
           Name: "custom:password_time",
