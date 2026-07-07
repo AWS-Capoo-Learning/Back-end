@@ -26,6 +26,9 @@ export const handler = async (event) => {
   const provider = isExternal
     ? identities[0]?.providerName ?? identities[0]?.providerType ?? "EXTERNAL"
     : "COGNITO";
+  const iss =
+    identities[0]?.issuer ??
+    `https://cognito-idp.${process.env.AWS_REGION}.amazonaws.com/${event.userPoolId}`;
 
   try {
     await db.send(new PutCommand({
@@ -39,6 +42,7 @@ export const handler = async (event) => {
         role: "USER",
         provider,
         isExternal,
+        iss,
         createdAt: new Date().toISOString()
       },
       ConditionExpression: "attribute_not_exists(userId)"

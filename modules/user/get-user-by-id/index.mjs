@@ -45,6 +45,9 @@ export const handler = async (event) => {
     displayName: user.displayName,
     status: user.status,
     role: user.role,
+    provider: user.provider,
+    isExternal: user.isExternal,
+    iss: user.iss,
     createdAt: user.createdAt
   });
 };
