@@ -8,7 +8,7 @@ const dynamodb = new DynamoDBClient({});
 export const handler = async (event) => {
   console.log("Event:", JSON.stringify(event));
 
-  const userId = event.detail?.additionalEventData?.sub;
+  const userId = event.detail?.additionalEventData?.["custom:id"];
   const eventName = event.detail?.eventName;
 
   if (!userId || !eventName) {
