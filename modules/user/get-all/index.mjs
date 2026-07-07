@@ -39,17 +39,19 @@ export const handler = async (event) => {
     Limit: 50
   }));
 
-  const users = (result.Items ?? []).map((user) => ({
-    userId: user.userId,
-    email: user.email,
-    displayName: user.displayName,
-    status: user.status,
-    role: user.role,
-    provider: user.provider,
-    isExternal: user.isExternal,
-    iss: user.iss,
-    createdAt: user.createdAt
-  }));
+  const users = (result.Items ?? [])
+    .filter((user) => user._type !== "EMAIL_PROVIDER_UNIQUE")
+    .map((user) => ({
+      userId: user.userId,
+      email: user.email,
+      displayName: user.displayName,
+      status: user.status,
+      role: user.role,
+      provider: user.provider,
+      isExternal: user.isExternal,
+      iss: user.iss,
+      createdAt: user.createdAt
+    }));
 
   return response(200, {
     users,

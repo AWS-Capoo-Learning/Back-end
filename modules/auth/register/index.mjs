@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
-  PutCommand
+  TransactWriteCommand
 } from "@aws-sdk/lib-dynamodb";
 import {
   CognitoIdentityProviderClient,
@@ -29,28 +29,55 @@ export const handler = async (event) => {
   const iss =
     identities[0]?.issuer ??
     `https://cognito-idp.${process.env.AWS_REGION}.amazonaws.com/${event.userPoolId}`;
+  const normalizedEmail = attributes.email?.trim().toLowerCase();
+  const emailProviderKey = buildEmailProviderKey(normalizedEmail, provider);
+  const createdAt = new Date().toISOString();
 
   try {
-    await db.send(new PutCommand({
-      TableName: process.env.USERS_TABLE,
-      Item: {
-        userId,
-        cognitoSub: attributes.sub,
-        email: attributes.email,
-        displayName: attributes.name ?? "",
-        status: "ACTIVE",
-        role: "USER",
-        provider,
-        isExternal,
-        iss,
-        createdAt: new Date().toISOString()
-      },
-      ConditionExpression: "attribute_not_exists(userId)"
+    await db.send(new TransactWriteCommand({
+      TransactItems: [
+        {
+          Put: {
+            TableName: process.env.USERS_TABLE,
+            Item: {
+              userId: emailProviderKey,
+              _type: "EMAIL_PROVIDER_UNIQUE",
+              email: normalizedEmail,
+              provider,
+              ownerUserId: userId,
+              cognitoSub: attributes.sub,
+              createdAt
+            },
+            ConditionExpression: "attribute_not_exists(userId)"
+          }
+        },
+        {
+          Put: {
+            TableName: process.env.USERS_TABLE,
+            Item: {
+              userId,
+              cognitoSub: attributes.sub,
+              email: normalizedEmail,
+              displayName: attributes.name ?? "",
+              status: "ACTIVE",
+              role: "USER",
+              provider,
+              isExternal,
+              iss,
+              emailProviderKey,
+              createdAt
+            },
+            ConditionExpression: "attribute_not_exists(userId)"
+          }
+        }
+      ]
     }));
   } catch (error) {
-    if (error.name !== "ConditionalCheckFailedException") {
-      throw error;
+    if (error.name === "TransactionCanceledException") {
+      throw new Error("Email and provider already exists");
     }
+
+    throw error;
   }
 
   await cognito.send(new AdminAddUserToGroupCommand({
@@ -93,4 +120,8 @@ function parseIdentities(value) {
   } catch {
     return [];
   }
+}
+
+function buildEmailProviderKey(email, provider) {
+  return `EMAIL_PROVIDER#${provider.toLowerCase()}#${email}`;
 }
