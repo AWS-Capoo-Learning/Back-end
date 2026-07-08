@@ -8,6 +8,7 @@ import {
 import {
   CognitoIdentityProviderClient,
   AdminAddUserToGroupCommand,
+  AdminDeleteUserCommand,
   AdminUpdateUserAttributesCommand
 } from "@aws-sdk/client-cognito-identity-provider";
 
@@ -39,6 +40,7 @@ export const handler = async (event) => {
   );
 
   if (existingUser) {
+    await deleteCognitoUser(event);
     throw new Error("Email and provider already exists");
   }
 
@@ -82,6 +84,13 @@ export const handler = async (event) => {
 
   return event;
 };
+
+async function deleteCognitoUser(event) {
+  await cognito.send(new AdminDeleteUserCommand({
+    UserPoolId: event.userPoolId,
+    Username: event.userName
+  }));
+}
 
 function parseIdentities(value) {
   if (Array.isArray(value)) {

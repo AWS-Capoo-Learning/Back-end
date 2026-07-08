@@ -60,7 +60,7 @@ export const handler = async (event) => {
       const now = Math.floor(Date.now() / 1000);
       const passwordTime = Number(payload["custom:password_time"] ?? 0);
       if (
-        now - passwordTime > 5 * 60 &&
+        now - passwordTime >5*60*60 &&
         !isChangePasswordRequest(event.methodArn)
       ) {
         return generatePolicy(
